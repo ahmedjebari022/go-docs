@@ -17,9 +17,13 @@ import (
 func main(){
 	godotenv.Load()
 	dbUrl := os.Getenv("DB_URL")
+	secretKey := os.Getenv("SECRET_KEY")
 	port := os.Getenv("PORT")
 	if dbUrl == ""{
 		log.Fatal("Missing database Url")
+	}
+	if secretKey == ""{
+		log.Fatal("Missing secret Key")
 	}
 	db, err := sql.Open("postgres",dbUrl)
 
@@ -34,6 +38,7 @@ func main(){
 	}
 	apiCfg := api.ApiConfig{
 		Db:dbQueries,
+		SecretKey: secretKey,
 	}
 
 
@@ -44,7 +49,7 @@ func main(){
 	}
 
 	mux.HandleFunc("POST /api/users",apiCfg.CreateUser)
-
+	mux.HandleFunc("POST /api/auth/login",apiCfg.LoginUser)
 
 
 

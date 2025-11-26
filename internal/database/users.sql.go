@@ -41,3 +41,54 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	)
 	return i, err
 }
+
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, email, hashed_password, created_at, updated_at FROM users 
+WHERE email = $1
+`
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.HashedPassword,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserById = `-- name: GetUserById :one
+SELECT id, email, hashed_password, created_at, updated_at FROM users WHERE id = $1
+`
+
+func (q *Queries) GetUserById(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserById, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.HashedPassword,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUsersPassword = `-- name: UpdateUsersPassword :exec
+UPDATE users
+SET hashed_password = $1 
+WHERE id = $2
+`
+
+type UpdateUsersPasswordParams struct {
+	HashedPassword string
+	ID             uuid.UUID
+}
+
+func (q *Queries) UpdateUsersPassword(ctx context.Context, arg UpdateUsersPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, updateUsersPassword, arg.HashedPassword, arg.ID)
+	return err
+}
