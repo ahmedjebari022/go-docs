@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,11 +20,19 @@ func main(){
 	dbUrl := os.Getenv("DB_URL")
 	secretKey := os.Getenv("SECRET_KEY")
 	port := os.Getenv("PORT")
+	cookieKey := os.Getenv("COOKIE_SECRET")
+	assetsPath := os.Getenv("ASSETS_ROOT")
 	if dbUrl == ""{
 		log.Fatal("Missing database Url")
 	}
 	if secretKey == ""{
 		log.Fatal("Missing secret Key")
+	}
+	if cookieKey == ""{
+		log.Fatal("Missing cookie secret Key")
+	}
+	if assetsPath == ""{
+		log.Fatal("Missing assets path")
 	}
 	db, err := sql.Open("postgres",dbUrl)
 
@@ -32,6 +41,10 @@ func main(){
 	}
 	
 	dbQueries := database.New(db)
+	ck, err := hex.DecodeString(cookieKey)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 
 	cfg := config.Config{
 		Port: port,
@@ -39,6 +52,9 @@ func main(){
 	apiCfg := api.ApiConfig{
 		Db:dbQueries,
 		SecretKey: secretKey,
+		CookieKey: ck,
+		AssetsPath: assetsPath,
+		Port: port,
 	}
 
 
@@ -50,6 +66,9 @@ func main(){
 
 	mux.HandleFunc("POST /api/users",apiCfg.CreateUser)
 	mux.HandleFunc("POST /api/auth/login",apiCfg.LoginUser)
+	mux.HandleFunc("GET /api/cookie",apiCfg.ReaderCookieHandler)
+	mux.HandleFunc("POST /api/cookie/refresh",apiCfg.RefreshTokenHandler)
+	mux.Handle("POST /api/documents",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.CreateDocumentHandler)))
 
 
 

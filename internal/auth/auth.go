@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -72,4 +74,14 @@ func ValidateJwt(secretString, tokenString string)(uuid.UUID, error){
 			return uuid.Nil, err
 		}
 		return id, nil
+}
+
+func GenerateRefreshToken() ( string, error ) {
+	b := make([]byte,32)
+	rand.Read(b)
+	token := hex.EncodeToString(b)
+
+	return string(token), nil
+
+
 }

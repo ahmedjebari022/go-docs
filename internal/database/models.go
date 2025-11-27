@@ -5,10 +5,29 @@
 package database
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+type Document struct {
+	ID          uuid.UUID
+	Name        string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	OwnerID     uuid.UUID
+	DocumentUrl string
+}
+
+type RefreshToken struct {
+	Token     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	UserID    uuid.UUID
+	RevokedAt sql.NullTime
+	ExpiresAt time.Time
+}
 
 type User struct {
 	ID             uuid.UUID
