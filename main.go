@@ -50,6 +50,7 @@ func main(){
 		Port: port,
 	}
 	apiCfg := api.ApiConfig{
+		DbC: db,
 		Db:dbQueries,
 		SecretKey: secretKey,
 		CookieKey: ck,

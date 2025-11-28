@@ -49,3 +49,80 @@ func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) 
 	)
 	return i, err
 }
+
+const getDocument = `-- name: GetDocument :one
+SELECT id, name, created_at, updated_at, owner_id, document_url FROM documents WHERE id = $1
+`
+
+func (q *Queries) GetDocument(ctx context.Context, id uuid.UUID) (Document, error) {
+	row := q.db.QueryRowContext(ctx, getDocument, id)
+	var i Document
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerID,
+		&i.DocumentUrl,
+	)
+	return i, err
+}
+
+const getDocumentsByUser = `-- name: GetDocumentsByUser :many
+SELECT id, name FROM documents
+WHERE owner_id = $1
+`
+
+type GetDocumentsByUserRow struct {
+	ID   uuid.UUID
+	Name string
+}
+
+func (q *Queries) GetDocumentsByUser(ctx context.Context, ownerID uuid.UUID) ([]GetDocumentsByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDocumentsByUser, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDocumentsByUserRow
+	for rows.Next() {
+		var i GetDocumentsByUserRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateDocument = `-- name: UpdateDocument :exec
+UPDATE documents 
+SET updated_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) UpdateDocument(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, updateDocument, id)
+	return err
+}
+
+const updateDocumentName = `-- name: UpdateDocumentName :exec
+UPDATE documents SET updated_at = NOW(), name = $1
+WHERE id = $2
+`
+
+type UpdateDocumentNameParams struct {
+	Name string
+	ID   uuid.UUID
+}
+
+func (q *Queries) UpdateDocumentName(ctx context.Context, arg UpdateDocumentNameParams) error {
+	_, err := q.db.ExecContext(ctx, updateDocumentName, arg.Name, arg.ID)
+	return err
+}
