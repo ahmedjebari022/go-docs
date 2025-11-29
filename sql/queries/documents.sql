@@ -1,12 +1,11 @@
 -- name: CreateDocument :one
-INSERT INTO documents (id, created_at, updated_at, owner_id, name, document_url)
+INSERT INTO documents (id, created_at, updated_at, owner_id, name)
 VALUES(
     $1,
     NOW(),
     NOW(),
     $2,
-    $3,
-    $4
+    $3
 )
 RETURNING *;
 
@@ -28,3 +27,12 @@ WHERE id = $2;
 
 -- name: GetDocument :one
 SELECT * FROM documents WHERE id = $1;
+
+
+-- name: GetDocumentOwner :one
+SELECT owner_id from documents WHERE id = $1 ;
+
+
+
+-- name: DeleteDocument :exec
+DELETE from documents WHERE id = $1 ;

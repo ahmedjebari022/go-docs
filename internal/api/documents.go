@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
+	
 	"io"
 	"net/http"
 	"os"
@@ -35,8 +35,8 @@ func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Reque
 			Name 	string `json:"name" validate:"required"`
 		}
 		type responseBody struct{
+			Id 		uuid.UUID `json:"id"`
 			Name 	string `json:"name"`
-			DocumentUrl 	string `json:"document_url"`
 			OwnerId 			string `json:"owner_id"`
 		}
 
@@ -60,27 +60,26 @@ func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		documentID := uuid.New()
-		documentPath := filepath.Join(cfg.AssetsPath, documentID.String()) + ".json"
 		err = EnsureDirExists(cfg.AssetsPath)
 		if err != nil {
 			respondWithError(w, 500, err.Error())
 			return
 		}
+		documentPath := generatePathFromId(documentID.String(),cfg.AssetsPath)
 		file, err := os.Create(documentPath)
 		if err != nil {
 			respondWithError(w, 500, err.Error())
 			return
 		}
+		defer file.Close()
 		err = WriteToFile(file, Document{})
 		if err != nil {
 			respondWithError(w, 500, err.Error())
 			return
 		}
-		documentUrl := fmt.Sprintf("http://localhost:%s/assets/%s.json", cfg.Port, documentID)
 		document, err := cfg.Db.CreateDocument(r.Context(), database.CreateDocumentParams{
 			ID: documentID,
 			Name: params.Name,
-			DocumentUrl: documentUrl,
 			OwnerID: userId,
 		})
 		if err != nil {
@@ -88,9 +87,9 @@ func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Reque
 			respondWithError(w, 500, err.Error())
 			return
 		}
-		RespondWithJson(w, 200, responseBody{
+		RespondWithJson(w, 201, responseBody{
+			Id: document.ID,
 			Name: document.Name,
-			DocumentUrl: document.DocumentUrl,
 			OwnerId: document.OwnerID.String(),	
 		})
 
@@ -109,7 +108,7 @@ func (cfg *ApiConfig) GetDocumentsByUserHandler(w http.ResponseWriter, r *http.R
 		}
 		
 		if err != nil {
-			respondWithError(w, 403, err.Error())
+			respondWithError(w, 401, err.Error())
 			return
 		}
 		
@@ -145,16 +144,17 @@ func (cfg *ApiConfig) GetDocumentHandler(w http.ResponseWriter, r *http.Request)
 			respondWithError(w, 500, err.Error())
 			return
 		}
-		document, err := cfg.Db.GetDocument(r.Context(),id)
+		documentOwner, err := cfg.Db.GetDocumentOwner(r.Context(),id)
 		if err != nil {
 			respondWithError(w, 500, err.Error())
 			return
 		}
-		if document.OwnerID != userId{
+		if documentOwner != userId{
 			respondWithError(w, 403, "Not Authorized to view this Document")
 			return	
 		}
-		documentContent, err := ReadFromFile(document.DocumentUrl)
+		documentPath := generatePathFromId(documentId,cfg.AssetsPath)
+		documentContent, err := ReadFromFile(documentPath)
 		if err != nil {
 			respondWithError(w, 500, err.Error())
 			return 
@@ -164,7 +164,7 @@ func (cfg *ApiConfig) GetDocumentHandler(w http.ResponseWriter, r *http.Request)
 }
 
 
-func (cfg *ApiConfig) UpdateDocument(w http.ResponseWriter, r *http.Request){
+func (cfg *ApiConfig) UpdateDocumentHandler(w http.ResponseWriter, r *http.Request){
 		userId, err := GetUserIdFromContext(r.Context())
 		if err != nil {
 			respondWithError(w, 401, err.Error())
@@ -181,20 +181,26 @@ func (cfg *ApiConfig) UpdateDocument(w http.ResponseWriter, r *http.Request){
 			return
 		}
 
-		document, err := cfg.Db.GetDocument(r.Context(),id)
+		ownerId, err := cfg.Db.GetDocumentOwner(r.Context(),id)
 		if err != nil {
 			respondWithError(w, 500, err.Error())
 			return
 		}
-		if document.OwnerID != userId{
+		if ownerId != userId{
 			respondWithError(w, 403, "user not authorized")
 			return
 		}
+		sizeLimit := 1 << 20
+		r.Body = http.MaxBytesReader(w, r.Body, int64(sizeLimit))
 		decoder := json.NewDecoder(r.Body)
 		defer r.Body.Close()
 		var params Document
 		if err := decoder.Decode(&params); err != nil {
 			respondWithError(w, 500, err.Error())
+			return
+		}
+		if len(params.Blocs) > 50000{
+			respondWithError(w, 413, "document too large")
 			return
 		}
 		ctx, err := cfg.DbC.Begin()
@@ -218,6 +224,7 @@ func (cfg *ApiConfig) UpdateDocument(w http.ResponseWriter, r *http.Request){
 		defer tmp.Close()
 		err = WriteToFile(tmp, params)
 		if err != nil {
+			os.Remove(tmp.Name())
 			respondWithError(w, 500, err.Error())
 			return
 		}
@@ -229,12 +236,64 @@ func (cfg *ApiConfig) UpdateDocument(w http.ResponseWriter, r *http.Request){
 		}
 		err = os.Rename(tmp.Name(), path)
 		if err != nil{
+			os.Remove(tmp.Name())	
 			respondWithError(w, 500, err.Error())
 			return
 		}
-
 		RespondWithJson(w, 204, struct{}{})
 }
+
+func (cfg *ApiConfig) DeleteDocumentHandler(w http.ResponseWriter, r *http.Request){
+		userId, err := GetUserIdFromContext(r.Context())
+		if err != nil {
+			respondWithError(w, 401, "action require authentication")
+			return 
+		}
+		documentIdString := r.URL.Query().Get("documentId")
+		documentId, err := uuid.Parse(documentIdString)
+		if err != nil {
+			respondWithError(w, 400, err.Error() )
+			return
+		}
+		
+		ownerId, err := cfg.Db.GetDocumentOwner(r.Context(), documentId)
+		if err != nil {
+			respondWithError(w, 400, err.Error())
+			return
+		}
+		if ownerId != userId{
+			respondWithError(w, 403, "unauthorized")
+			return
+		}
+		ctx, err := cfg.DbC.Begin()	
+		if err != nil {
+			respondWithError(w, 500, err.Error())
+			return 
+		}
+		tx := cfg.Db.WithTx(ctx)
+		defer ctx.Rollback()
+
+		err = tx.DeleteDocument(r.Context(), documentId)
+		if err != nil {
+			respondWithError(w, 500, err.Error())
+			return
+		}
+		err = ctx.Commit()		
+		if err != nil {
+			respondWithError(w, 500, err.Error())
+			return
+		}
+		path := generatePathFromId(documentIdString, cfg.AssetsPath)		
+		err = os.Remove(path)
+		if err != nil {
+			respondWithError(w, 500, err.Error())
+			return 
+		}
+		RespondWithJson(w, 204, struct{}{})
+}
+
+
+
 
 
 
@@ -247,7 +306,7 @@ func  generatePathFromId(id, assets string)string{
 func EnsureDirExists(pathdir string) error{
 	_, err := os.Stat(pathdir)
 	if os.IsNotExist(err){
-		err = os.Mkdir(pathdir,0755)
+		err = os.MkdirAll(pathdir,0755)
 		if err != nil {
 			return err
 		}
@@ -266,24 +325,13 @@ func WriteToFile(file *os.File, documentContent Document) error{
 }
 
 
-func WriteToFile2(filepath string, documentContent Document) error{
-		file, err := os.Open(filepath)	
-		if err != nil {
-			return err
-		}
-		encoder := json.NewEncoder(file)
-		if err := encoder.Encode(documentContent); err != nil {
-			return err
-		}
-		return nil
-}
-
-func ReadFromFile(fileUrl string) (Document, error){
-	res, err := http.Get(fileUrl)	
+func ReadFromFile(filepath string) (Document, error){
+	file, err := os.Open(filepath)
 	if err != nil {
 		return Document{}, err
 	}
-	decoder := json.NewDecoder(res.Body)
+	defer file.Close()
+	decoder := json.NewDecoder(file)
 	var document Document
 	if err := decoder.Decode(&document); err != nil {
 		return Document{}, err

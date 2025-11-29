@@ -12,32 +12,25 @@ import (
 )
 
 const createDocument = `-- name: CreateDocument :one
-INSERT INTO documents (id, created_at, updated_at, owner_id, name, document_url)
+INSERT INTO documents (id, created_at, updated_at, owner_id, name)
 VALUES(
     $1,
     NOW(),
     NOW(),
     $2,
-    $3,
-    $4
+    $3
 )
-RETURNING id, name, created_at, updated_at, owner_id, document_url
+RETURNING id, name, created_at, updated_at, owner_id
 `
 
 type CreateDocumentParams struct {
-	ID          uuid.UUID
-	OwnerID     uuid.UUID
-	Name        string
-	DocumentUrl string
+	ID      uuid.UUID
+	OwnerID uuid.UUID
+	Name    string
 }
 
 func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) (Document, error) {
-	row := q.db.QueryRowContext(ctx, createDocument,
-		arg.ID,
-		arg.OwnerID,
-		arg.Name,
-		arg.DocumentUrl,
-	)
+	row := q.db.QueryRowContext(ctx, createDocument, arg.ID, arg.OwnerID, arg.Name)
 	var i Document
 	err := row.Scan(
 		&i.ID,
@@ -45,13 +38,21 @@ func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OwnerID,
-		&i.DocumentUrl,
 	)
 	return i, err
 }
 
+const deleteDocument = `-- name: DeleteDocument :exec
+DELETE from documents WHERE id = $1
+`
+
+func (q *Queries) DeleteDocument(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteDocument, id)
+	return err
+}
+
 const getDocument = `-- name: GetDocument :one
-SELECT id, name, created_at, updated_at, owner_id, document_url FROM documents WHERE id = $1
+SELECT id, name, created_at, updated_at, owner_id FROM documents WHERE id = $1
 `
 
 func (q *Queries) GetDocument(ctx context.Context, id uuid.UUID) (Document, error) {
@@ -63,9 +64,19 @@ func (q *Queries) GetDocument(ctx context.Context, id uuid.UUID) (Document, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OwnerID,
-		&i.DocumentUrl,
 	)
 	return i, err
+}
+
+const getDocumentOwner = `-- name: GetDocumentOwner :one
+SELECT owner_id from documents WHERE id = $1
+`
+
+func (q *Queries) GetDocumentOwner(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, getDocumentOwner, id)
+	var owner_id uuid.UUID
+	err := row.Scan(&owner_id)
+	return owner_id, err
 }
 
 const getDocumentsByUser = `-- name: GetDocumentsByUser :many

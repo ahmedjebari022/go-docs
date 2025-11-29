@@ -12,12 +12,11 @@ import (
 )
 
 type Document struct {
-	ID          uuid.UUID
-	Name        string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	OwnerID     uuid.UUID
-	DocumentUrl string
+	ID        uuid.UUID
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	OwnerID   uuid.UUID
 }
 
 type RefreshToken struct {
