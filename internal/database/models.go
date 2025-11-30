@@ -19,6 +19,14 @@ type Document struct {
 	OwnerID   uuid.UUID
 }
 
+type DocumentPermission struct {
+	UserID     uuid.UUID
+	DocumentID uuid.UUID
+	Role       string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 type RefreshToken struct {
 	Token     string
 	CreatedAt time.Time
