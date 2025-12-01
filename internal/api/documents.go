@@ -97,7 +97,6 @@ func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Reque
 
 
 func (cfg *ApiConfig) GetDocumentsByUserHandler(w http.ResponseWriter, r *http.Request){
-		userId, err := GetUserIdFromContext(r.Context())
 		
 		type responseDocument struct{
 				DocumentId 	uuid.UUID `json:"document_id"`
@@ -107,6 +106,7 @@ func (cfg *ApiConfig) GetDocumentsByUserHandler(w http.ResponseWriter, r *http.R
 			Documents 	[]responseDocument `json:"documents"`
 		}
 		
+		userId, err := GetUserIdFromContext(r.Context())
 		if err != nil {
 			respondWithError(w, 401, err.Error())
 			return
@@ -129,7 +129,7 @@ func (cfg *ApiConfig) GetDocumentsByUserHandler(w http.ResponseWriter, r *http.R
 }
 
 func (cfg *ApiConfig) GetDocumentHandler(w http.ResponseWriter, r *http.Request){
-		documentId := r.URL.Query().Get("documentId")	
+		documentId := r.PathValue("documentId")
 		userId, err := GetUserIdFromContext(r.Context())
 		if err != nil {
 			respondWithError(w, 401, err.Error())
@@ -139,19 +139,28 @@ func (cfg *ApiConfig) GetDocumentHandler(w http.ResponseWriter, r *http.Request)
 			respondWithError(w, 400 , "Missing document Id from the request")
 			return
 		}
+
         id, err :=  uuid.Parse(documentId)
 		if err != nil {
-			respondWithError(w, 500, err.Error())
+			respondWithError(w, 400, err.Error())
 			return
 		}
-		documentOwner, err := cfg.Db.GetDocumentOwner(r.Context(),id)
+
+		documentOwner, err := cfg.Db.GetDocumentOwnerId(r.Context(),id)
 		if err != nil {
 			respondWithError(w, 500, err.Error())
 			return
 		}
+
 		if documentOwner != userId{
-			respondWithError(w, 403, "Not Authorized to view this Document")
-			return	
+			_, err = cfg.Db.GetUserPermission(r.Context(), database.GetUserPermissionParams{
+			UserID: userId,
+			DocumentID: id,
+			})
+			if err != nil {
+				respondWithError(w, 403, "Not Authorized to view this Document")
+				return
+			}	
 		}
 		documentPath := generatePathFromId(documentId,cfg.AssetsPath)
 		documentContent, err := ReadFromFile(documentPath)
@@ -170,25 +179,31 @@ func (cfg *ApiConfig) UpdateDocumentHandler(w http.ResponseWriter, r *http.Reque
 			respondWithError(w, 401, err.Error())
 			return 
 		}
-		documentId := r.URL.Query().Get("documentId")	
+		documentId := r.PathValue("documentId")
 		if documentId == ""{
 			respondWithError(w, 400, "Missing Document id from query")
 			return
 		}
 		id, err := uuid.Parse(documentId)
 		if err != nil {
-			respondWithError(w, 500, err.Error())
+			respondWithError(w, 400, err.Error())
 			return
 		}
 
-		ownerId, err := cfg.Db.GetDocumentOwner(r.Context(),id)
+		ownerId, err := cfg.Db.GetDocumentOwnerId(r.Context(),id)
 		if err != nil {
 			respondWithError(w, 500, err.Error())
 			return
 		}
 		if ownerId != userId{
-			respondWithError(w, 403, "user not authorized")
-			return
+			role, err := cfg.Db.GetUserPermission(r.Context(), database.GetUserPermissionParams{
+				UserID: userId,
+				DocumentID: id,
+			})
+			if err != nil || role != EditorRole{
+				respondWithError(w, 403, "user not authorized")
+				return
+			}
 		}
 		sizeLimit := 1 << 20
 		r.Body = http.MaxBytesReader(w, r.Body, int64(sizeLimit))
@@ -196,7 +211,7 @@ func (cfg *ApiConfig) UpdateDocumentHandler(w http.ResponseWriter, r *http.Reque
 		defer r.Body.Close()
 		var params Document
 		if err := decoder.Decode(&params); err != nil {
-			respondWithError(w, 500, err.Error())
+			respondWithError(w, 400, err.Error())
 			return
 		}
 		if len(params.Blocs) > 50000{
@@ -249,16 +264,16 @@ func (cfg *ApiConfig) DeleteDocumentHandler(w http.ResponseWriter, r *http.Reque
 			respondWithError(w, 401, "action require authentication")
 			return 
 		}
-		documentIdString := r.URL.Query().Get("documentId")
+		documentIdString := r.PathValue("documentId")
 		documentId, err := uuid.Parse(documentIdString)
 		if err != nil {
 			respondWithError(w, 400, err.Error() )
 			return
 		}
 		
-		ownerId, err := cfg.Db.GetDocumentOwner(r.Context(), documentId)
+		ownerId, err := cfg.Db.GetDocumentOwnerId(r.Context(), documentId)
 		if err != nil {
-			respondWithError(w, 400, err.Error())
+			respondWithError(w, 500, err.Error())
 			return
 		}
 		if ownerId != userId{

@@ -69,19 +69,74 @@ func (q *Queries) GetDocument(ctx context.Context, id uuid.UUID) (Document, erro
 }
 
 const getDocumentOwner = `-- name: GetDocumentOwner :one
+SELECT u.email, u.id 
+FROM documents d
+INNER JOIN users u 
+ON d.owner_id = u.id
+WHERE d.id = $1
+`
+
+type GetDocumentOwnerRow struct {
+	Email string
+	ID    uuid.UUID
+}
+
+func (q *Queries) GetDocumentOwner(ctx context.Context, id uuid.UUID) (GetDocumentOwnerRow, error) {
+	row := q.db.QueryRowContext(ctx, getDocumentOwner, id)
+	var i GetDocumentOwnerRow
+	err := row.Scan(&i.Email, &i.ID)
+	return i, err
+}
+
+const getDocumentOwnerId = `-- name: GetDocumentOwnerId :one
 SELECT owner_id from documents WHERE id = $1
 `
 
-func (q *Queries) GetDocumentOwner(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
-	row := q.db.QueryRowContext(ctx, getDocumentOwner, id)
+func (q *Queries) GetDocumentOwnerId(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, getDocumentOwnerId, id)
 	var owner_id uuid.UUID
 	err := row.Scan(&owner_id)
 	return owner_id, err
 }
 
-const getDocumentsByUser = `-- name: GetDocumentsByUser :many
+const getDocumentsByOwner = `-- name: GetDocumentsByOwner :many
 SELECT id, name FROM documents
 WHERE owner_id = $1
+`
+
+type GetDocumentsByOwnerRow struct {
+	ID   uuid.UUID
+	Name string
+}
+
+func (q *Queries) GetDocumentsByOwner(ctx context.Context, ownerID uuid.UUID) ([]GetDocumentsByOwnerRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDocumentsByOwner, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDocumentsByOwnerRow
+	for rows.Next() {
+		var i GetDocumentsByOwnerRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDocumentsByUser = `-- name: GetDocumentsByUser :many
+SELECT d.id, d.name FROM documents d
+LEFT JOIN document_permissions p
+ON p.document_id = d.id 
+WHERE p.user_id = $1 OR d.owner_id = $1
 `
 
 type GetDocumentsByUserRow struct {
@@ -89,8 +144,8 @@ type GetDocumentsByUserRow struct {
 	Name string
 }
 
-func (q *Queries) GetDocumentsByUser(ctx context.Context, ownerID uuid.UUID) ([]GetDocumentsByUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, getDocumentsByUser, ownerID)
+func (q *Queries) GetDocumentsByUser(ctx context.Context, userID uuid.UUID) ([]GetDocumentsByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDocumentsByUser, userID)
 	if err != nil {
 		return nil, err
 	}

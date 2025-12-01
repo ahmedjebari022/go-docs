@@ -20,3 +20,8 @@ UPDATE document_permissions SET role = $1 WHERE user_id = $2 AND document_id = $
 
 -- name: DeletePermission :exec
 DELETE from document_permissions WHERE user_id = $1 AND document_id = $2; 
+
+
+-- name: GetUserPermission :one
+SELECT role FROM document_permissions 
+WHERE user_id = $1 AND document_id = $2;

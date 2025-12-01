@@ -46,6 +46,23 @@ func (q *Queries) DeletePermission(ctx context.Context, arg DeletePermissionPara
 	return err
 }
 
+const getUserPermission = `-- name: GetUserPermission :one
+SELECT role FROM document_permissions 
+WHERE user_id = $1 AND document_id = $2
+`
+
+type GetUserPermissionParams struct {
+	UserID     uuid.UUID
+	DocumentID uuid.UUID
+}
+
+func (q *Queries) GetUserPermission(ctx context.Context, arg GetUserPermissionParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getUserPermission, arg.UserID, arg.DocumentID)
+	var role string
+	err := row.Scan(&role)
+	return role, err
+}
+
 const getUsersFromDocument = `-- name: GetUsersFromDocument :many
 SELECT u.email ,u.id , d.role
 FROM document_permissions d

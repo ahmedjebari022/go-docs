@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/ahmedjebari022/go-docs/internal/database"
 	"github.com/google/uuid"
@@ -14,13 +17,53 @@ const (
 	OwnerRole = "owner"
 )
 
-
-func (cfg *ApiConfig) checkIfUserIsOwner(r *http.Request, userId, documentId uuid.UUID)(bool, error){
-	ownerId, err := cfg.Db.GetDocumentOwner(r.Context(), documentId)
+func  getDocumentAndUserFromUrl(r *http.Request) (userId, documentId uuid.UUID, err error) {
+	documentIdString := r.PathValue("documentId")
+	documentId, err = uuid.Parse(documentIdString)
 	if err != nil {
-		return false, err
+		return uuid.Nil, uuid.Nil, fmt.Errorf("400: document error")
 	}
-	return ownerId == userId, nil
+	userId, err = GetUserIdFromContext(r.Context())
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("401: not authenticated")
+	}
+	return userId, documentId, err
+}
+
+func (cfg *ApiConfig) checkIsUserOwner(ctx context.Context, user_id, document_id uuid.UUID) (bool, error){
+	 ownerId, err := cfg.Db.GetDocumentOwnerId(ctx, document_id)
+	 if err != nil {
+		return false, err
+	 }
+	 return ownerId == user_id, nil
+}
+
+func (cfg *ApiConfig) requireOwnerShip(r *http.Request) (userId, documentId uuid.UUID, err error){
+	userId, documentId, err = getDocumentAndUserFromUrl(r)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+
+	isOwner, err := cfg.checkIsUserOwner(r.Context(), userId, documentId)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("404: document not found")
+	}
+	if !isOwner {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("403: not authorized")
+	}
+	return userId, documentId, nil
+}
+func parseStatusFromError(err error) int {
+	msg := err.Error()
+	if len(msg) < 4{
+		return 500
+	} 
+	statusCodeString := msg[:3]
+	statusCode, statusErr := strconv.Atoi(statusCodeString)
+	if statusErr != nil  {
+		return 500
+	}
+	return statusCode
 }
 
 func (cfg *ApiConfig) AddCollaboratorToDocumentHandler(w http.ResponseWriter, r *http.Request){
@@ -29,29 +72,13 @@ func (cfg *ApiConfig) AddCollaboratorToDocumentHandler(w http.ResponseWriter, r 
 		Role 		string  `json:"role"`
 	}
 
-	documentIdString := r.URL.Query().Get("documentId")
-	documentId, err := uuid.Parse(documentIdString)
+	_, documentId, err := cfg.requireOwnerShip(r)
 	if err != nil {
-		respondWithError(w, 400, err.Error())
-		return 
-	}
-
-	userId, err := GetUserIdFromContext(r.Context())
-	if err != nil {
-		respondWithError(w, 401, err.Error())
-		return 
-	}
-
-	isOwner, err := cfg.checkIfUserIsOwner(r, userId, documentId)
-	if err != nil {
-		respondWithError(w, 400, err.Error())
+		statusCode := parseStatusFromError(err)
+		respondWithError(w,statusCode, err.Error() )
 		return
 	}
 
-	if !isOwner{
-		respondWithError(w, 403, "not authorized")
-		return
-	}
 	var params requestBody
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&params); err != nil {
@@ -86,35 +113,22 @@ func (cfg *ApiConfig) UpdateUserPermissionHandler(w http.ResponseWriter, r *http
 		Role 	string `json:"role"`
 	}
 
-	documentIdString := r.URL.Query().Get("documentId")
-	documentId, err := uuid.Parse(documentIdString)
+	
+	_, documentId, err := cfg.requireOwnerShip(r) 
 	if err != nil {
-		respondWithError(w, 400, err.Error())
-		return 
-	}
-	userId, err := GetUserIdFromContext(r.Context())
-	if err != nil {
-		respondWithError(w, 403, err.Error())
-		return
-	}
-	isOwner, err := cfg.checkIfUserIsOwner(r, userId, documentId)
-	if err != nil {
-		respondWithError(w, 400, err.Error())
-		return 
-	}
-	if !isOwner {
-		respondWithError(w, 403, "not authorized")
+		statusCode := parseStatusFromError(err)
+		respondWithError(w, statusCode, err.Error())
 		return
 	}
 	var params requestBody
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&params); err != nil {
-		respondWithError(w, 500, err.Error())
+		respondWithError(w, 400, err.Error())
 		return
 	}
 	defer r.Body.Close()
 	if params.Role != EditorRole && params.Role != ViewerRole{
-		respondWithError(w, 500, "invalid role")
+		respondWithError(w, 400, "invalid role")
 		return
 	}
 	err = cfg.Db.UpdatePermission(r.Context(), database.UpdatePermissionParams{
@@ -123,7 +137,7 @@ func (cfg *ApiConfig) UpdateUserPermissionHandler(w http.ResponseWriter, r *http
 		Role: params.Role,
 	})
 	if err != nil {
-		respondWithError(w, 500, err.Error())
+		respondWithError(w, 400, err.Error())
 		return
 	}
 	RespondWithJson(w, 200, struct{}{})
@@ -138,30 +152,26 @@ func (cfg *ApiConfig) GetCollaboratorsHandler (w http.ResponseWriter, r *http.Re
 	type responseBody struct{
 		UserRoles	 []userRole `json:"userRoles"`
 	}
-	documentIdString := r.URL.Query().Get("documentId")
-	documentId, err := uuid.Parse(documentIdString)
+	userId, documentId, err := getDocumentAndUserFromUrl(r)
 	if err != nil {
-		respondWithError(w, 400, err.Error())
+		statusCode := parseStatusFromError(err)
+		respondWithError(w, statusCode, err.Error() )
 		return
 	}
-	userId, err := GetUserIdFromContext(r.Context())
-	if err != nil {
-		respondWithError(w, 401, err.Error())
-		return
-	}
+
 	u, err := cfg.Db.GetUsersFromDocument(r.Context(),documentId)
 	if err != nil {
 		respondWithError(w, 500, err.Error())
 		return
 	}
 	
-	ownerId, err := cfg.Db.GetDocumentOwner(r.Context(), documentId)
+	owner, err := cfg.Db.GetDocumentOwner(r.Context(), documentId)
 	if err != nil {
 		respondWithError(w, 500, err.Error())
 		return 
 	}
 
-	if isCollaborator := userIsCollaborator(u, userId) || userId == ownerId  ; !isCollaborator{
+	if isCollaborator := userIsCollaborator(u, userId) || userId == owner.ID  ; !isCollaborator{
 		respondWithError(w, 403, "not authorized")
 		return
 	}
@@ -173,18 +183,12 @@ func (cfg *ApiConfig) GetCollaboratorsHandler (w http.ResponseWriter, r *http.Re
 		}
 		res.UserRoles = append(res.UserRoles, ur)
 	}
-
-	owner, err := cfg.Db.GetUserById(r.Context(), ownerId)
-	if err != nil {
-		respondWithError(w, 500, err.Error())
-		return
-	}
 	
-	ownerEr:= userRole{
+	ownerUr:= userRole{
 		Email: owner.Email,
 		Role: OwnerRole,
 	}
-	res.UserRoles = append(res.UserRoles, ownerEr)
+	res.UserRoles = append(res.UserRoles, ownerUr)
 	RespondWithJson(w, 200, res)
 }
 
@@ -192,32 +196,18 @@ func (cfg *ApiConfig) DeleteUserFromCollaboration(w http.ResponseWriter, r *http
 	type requestBody struct {
 		Id 	uuid.UUID `json:"id"`
 	}
-	documentIdString := r.URL.Query().Get("documentId")
-	documentId, err := uuid.Parse(documentIdString)
-	if err != nil {
-		respondWithError(w, 500, err.Error())
-		return
-	}
 	
-	userId, err := GetUserIdFromContext(r.Context())
+	_, documentId, err := cfg.requireOwnerShip(r)
 	if err != nil {
-		respondWithError(w, 401, err.Error())
-		return 
+		statusCode := parseStatusFromError(err)
+		respondWithError(w, statusCode, err.Error())
+		return
 	}
 
-	isOwner, err := cfg.checkIfUserIsOwner(r, userId, documentId)
-	if err != nil {
-		respondWithError(w, 400, err.Error())
-		return
-	}
-	if !isOwner {
-		respondWithError(w, 403, "not authorized")
-		return
-	} 
 	var params requestBody
-	docoder := json.NewDecoder(r.Body)
-	if err := docoder.Decode(&params); err != nil {
-		respondWithError(w, 500, err.Error())
+	decoder:= json.NewDecoder(r.Body)
+	if err := decoder.Decode(&params); err != nil {
+		respondWithError(w, 400, err.Error())
 		return 
 	}
 	defer r.Body.Close()
@@ -230,10 +220,7 @@ func (cfg *ApiConfig) DeleteUserFromCollaboration(w http.ResponseWriter, r *http
 		respondWithError(w, 500, err.Error())
 		return
 	}
-	RespondWithJson(w, 200 , map[string]string{
-		"message": "permission Revoked succesfully",
-	})
-
+	RespondWithJson(w, 204 ,struct{}{})
 }
 
 

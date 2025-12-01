@@ -9,9 +9,17 @@ VALUES(
 )
 RETURNING *;
 
--- name: GetDocumentsByUser :many
+-- name: GetDocumentsByOwner :many
 SELECT id, name FROM documents
 WHERE owner_id = $1 ;
+
+
+-- name: GetDocumentsByUser :many
+SELECT d.id, d.name FROM documents d
+LEFT JOIN document_permissions p
+ON p.document_id = d.id 
+WHERE p.user_id = $1 OR d.owner_id = $1; 
+
 
 
 
@@ -29,10 +37,18 @@ WHERE id = $2;
 SELECT * FROM documents WHERE id = $1;
 
 
--- name: GetDocumentOwner :one
+-- name: GetDocumentOwnerId :one
 SELECT owner_id from documents WHERE id = $1 ;
 
 
 
 -- name: DeleteDocument :exec
 DELETE from documents WHERE id = $1 ;
+
+
+-- name: GetDocumentOwner :one
+SELECT u.email, u.id 
+FROM documents d
+INNER JOIN users u 
+ON d.owner_id = u.id
+WHERE d.id = $1 ;
