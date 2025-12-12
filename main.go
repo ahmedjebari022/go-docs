@@ -65,15 +65,20 @@ func main(){
 		Handler: mux,
 	}
 
+	hub := NewHub()
+	go hub.Run()
 	mux.HandleFunc("POST /api/users",apiCfg.CreateUser)
 	mux.HandleFunc("POST /api/auth/login",apiCfg.LoginUser)
 	mux.HandleFunc("GET /api/cookie",apiCfg.ReaderCookieHandler)
 	mux.HandleFunc("POST /api/cookie/refresh",apiCfg.RefreshTokenHandler)
 	mux.Handle("POST /api/documents",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.CreateDocumentHandler)))
-
+	mux.HandleFunc("/ws/{documentId}",hub.wsHandler)
 
 
 	fmt.Printf("Serving on:  http://localhost:%s\n", cfg.Port)
 	log.Fatal(srv.ListenAndServe())
 
 }
+
+
+
