@@ -21,7 +21,7 @@ export const authService = {
     },
 
     me : async() => {
-        return await api.post("users/me")
+        return await api.get("/users/me")
     }
 
 }

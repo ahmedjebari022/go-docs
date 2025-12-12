@@ -13,6 +13,7 @@ import (
 	"github.com/ahmedjebari022/go-docs/internal/database"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/rs/cors"
 )
 
 func main(){
@@ -60,20 +61,36 @@ func main(){
 
 
 	mux := http.NewServeMux()
-	srv := &http.Server{
-		Addr: ":" + cfg.Port ,
-		Handler: mux,
-	}
-
+	
 	hub := NewHub()
 	go hub.Run()
+
 	mux.HandleFunc("POST /api/users",apiCfg.CreateUser)
 	mux.HandleFunc("POST /api/auth/login",apiCfg.LoginUser)
 	mux.HandleFunc("GET /api/cookie",apiCfg.ReaderCookieHandler)
 	mux.HandleFunc("POST /api/cookie/refresh",apiCfg.RefreshTokenHandler)
-	mux.Handle("POST /api/documents",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.CreateDocumentHandler)))
 	mux.HandleFunc("/ws/{documentId}",hub.wsHandler)
+	mux.Handle("GET /api/users/me",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.GetCurrentUserHandler)))
+	mux.Handle("POST /api/auth/logout",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.LogoutHandler)))
+	//document endpoints
+	mux.Handle("POST /api/documents",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.CreateDocumentHandler)))
+	mux.Handle("GET /api/documents",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.GetDocumentsByUserHandler)))
+	mux.Handle("PUT /api/documments/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.UpdateDocumentHandler)))
+	mux.Handle("DELETE /api/documments/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.DeleteDocumentHandler)))
 
+
+
+  	c := cors.New(cors.Options{
+        	AllowedOrigins:   []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+        	AllowCredentials: true,
+        	AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+        	AllowedHeaders:   []string{"Content-Type", "Authorization"},
+    	})
+	handler := c.Handler(mux)
+	srv := &http.Server{
+		Addr: ":" + cfg.Port ,
+		Handler: handler,
+	}
 
 	fmt.Printf("Serving on:  http://localhost:%s\n", cfg.Port)
 	log.Fatal(srv.ListenAndServe())

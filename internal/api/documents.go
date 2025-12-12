@@ -2,12 +2,10 @@ package api
 
 import (
 	"encoding/json"
-
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-
 	"github.com/ahmedjebari022/go-docs/internal/database"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"

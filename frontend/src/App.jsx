@@ -1,37 +1,28 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
+import Dashboard from './pages/Dashboard'
+import useAuthStore from './stores/useAuthStore';
+import { useEffect } from 'react';
 
-import { AuthProvider, useAuth } from './context/AuthContext';
-
-const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-
-  if (!user) return <Navigate to="/login" replace />;
-
-  return children;
-};
 
 function App() {
-  return (
-    <BrowserRouter>
-      <AuthProvider>
+    const {initializeAuth, isLoggedIn, isLoading} = useAuthStore();
+    useEffect(() => {
+      initializeAuth()
+    },[])
+
+
+
+    return (
+      <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/login" element={<Login />}/>
+          <Route path="/register" element={<Register/>}/>
+          <Route path="/dashboard" element={isLoggedIn ? <Dashboard/> : <Login/>} />
         </Routes>
-      </AuthProvider>
-    </BrowserRouter>
-  )
+      </BrowserRouter>
+    )
 }
 
 export default App

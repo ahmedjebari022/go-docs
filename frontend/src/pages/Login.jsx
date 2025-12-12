@@ -1,127 +1,145 @@
-import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
-import { useState } from "react";
+import React, { useState, useEffect } from 'react'
+import { authService } from '../services/authService';
+import { Link, useNavigate } from 'react-router-dom';
+import { FileText, Mail, Lock, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
-import { Mail, Lock, Loader2, ArrowRight } from "lucide-react";
+import useAuthStore from '../stores/useAuthStore';
 
-export default function Login() {
-    const { login } = useAuth();
+function Login() {
     const navigate = useNavigate();
+    const { login, isLoggedIn } = useAuthStore();
+    const [formData, setFormData] = useState({
+        email: "",
+        password: "",
+    });
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
-    const handleSubmit = async (e) => {
+    useEffect(() => {
+        if (isLoggedIn) {
+            navigate('/dashboard');
+        }
+    }, [isLoggedIn, navigate]);
+
+    async function handleSubmit(e) {
         e.preventDefault();
         setError("");
         setLoading(true);
-        const formData = new FormData(e.currentTarget);
-        const email = formData.get("email");
-        const password = formData.get("password");
-
+        
         try {
-            await login(email, password);
-            navigate("/dashboard");
+            await login(formData.email, formData.password);
         } catch (err) {
-            setError(err.message);
+            setError("Invalid email or password");
         } finally {
             setLoading(false);
         }
-    };
+    }
+
+    function handleFormChange(e) {
+        setFormData({
+            ...formData,
+            [e.target.name]: e.target.value
+        });
+    }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 overflow-hidden relative">
-            {/* Decorative background blobs */}
-            <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
-            <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
-            <div className="absolute -bottom-32 left-20 w-96 h-96 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
-
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-4">
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="max-w-md w-full relative z-10 p-8 bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20"
+                className="w-full max-w-md"
             >
-                <div className="text-center mb-8">
-                    <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                        Welcome Back
-                    </h2>
-                    <p className="text-gray-500 mt-2">Sign in to continue to your docs</p>
+                {/* Logo */}
+                <div className="flex justify-center mb-8">
+                    <div className="flex items-center gap-2">
+                        <div className="bg-blue-600 p-2 rounded-lg">
+                            <FileText className="h-6 w-6 text-white" />
+                        </div>
+                        <span className="text-2xl font-bold bg-gradient-to-r from-blue-700 to-indigo-700 bg-clip-text text-transparent">
+                            GoDocs
+                        </span>
+                    </div>
                 </div>
 
-                {error && (
-                    <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        className="mb-6 bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-r text-sm"
-                    >
-                        {error}
-                    </motion.div>
-                )}
-
-                <form className="space-y-6" onSubmit={handleSubmit}>
-                    <div className="space-y-4">
-                        <div className="relative group">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
-                                <Mail className="h-5 w-5" />
-                            </div>
-                            <input
-                                id="email"
-                                name="email"
-                                type="email"
-                                required
-                                className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl leading-5 bg-white/50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200"
-                                placeholder="Email address"
-                            />
-                        </div>
-
-                        <div className="relative group">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-purple-500 transition-colors">
-                                <Lock className="h-5 w-5" />
-                            </div>
-                            <input
-                                id="password"
-                                name="password"
-                                type="password"
-                                required
-                                className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl leading-5 bg-white/50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all duration-200"
-                                placeholder="Password"
-                            />
-                        </div>
+                {/* Card */}
+                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+                    <div className="mb-8">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-2">Welcome back</h1>
+                        <p className="text-gray-500">Sign in to continue to your documents</p>
                     </div>
 
-                    <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center">
-                            <input id="remember-me" name="remember-me" type="checkbox" className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
-                            <label htmlFor="remember-me" className="ml-2 block text-gray-700">Remember me</label>
+                    {error && (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+                            {error}
                         </div>
-                        <a href="#" className="font-medium text-blue-600 hover:text-blue-500 hover:underline">Forgot password?</a>
+                    )}
+
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Email
+                            </label>
+                            <div className="relative">
+                                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="email"
+                                    name="email"
+                                    value={formData.email}
+                                    onChange={handleFormChange}
+                                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    placeholder="you@example.com"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Password
+                            </label>
+                            <div className="relative">
+                                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="password"
+                                    name="password"
+                                    value={formData.password}
+                                    onChange={handleFormChange}
+                                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    placeholder="••••••••"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <motion.button
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.99 }}
+                            type="submit"
+                            disabled={loading}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {loading ? "Signing in..." : "Sign in"}
+                            {!loading && <ArrowRight className="h-4 w-4" />}
+                        </motion.button>
+                    </form>
+
+                    <div className="mt-6 text-center">
+                        <p className="text-sm text-gray-600">
+                            Don't have an account?{" "}
+                            <Link to="/register" className="text-blue-600 hover:text-blue-700 font-medium">
+                                Sign up
+                            </Link>
+                        </p>
                     </div>
+                </div>
 
-                    <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        disabled={loading}
-                        type="submit"
-                        className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                    >
-                        {loading ? (
-                            <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                        ) : (
-                            <>
-                                Sign in
-                                <ArrowRight className="ml-2 h-4 w-4" />
-                            </>
-                        )}
-                    </motion.button>
-                </form>
-
-                <p className="mt-8 text-center text-sm text-gray-600">
-                    Not a member?{" "}
-                    <Link to="/register" className="font-medium text-purple-600 hover:text-purple-500 hover:underline">
-                        Create an account
-                    </Link>
+                <p className="text-center text-xs text-gray-500 mt-8">
+                    By signing in, you agree to our Terms of Service and Privacy Policy
                 </p>
             </motion.div>
         </div>
     );
 }
+
+export default Login;

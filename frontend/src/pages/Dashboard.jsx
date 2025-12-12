@@ -1,12 +1,33 @@
-import { useAuth } from "../context/AuthContext";
 import { Link } from "react-router-dom";
 import { Search, FileText, Plus, Bell, Settings, LogOut, Grid, List as ListIcon, Filter } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import useAuthStore from "../stores/useAuthStore";
+import DocumentCard from "../components/DocumentCard";
+import documentService from "../services/documentService";
 
 export default function Dashboard() {
-    const { user, logout } = useAuth();
-    const [viewMode, setViewMode] = useState("grid"); // 'grid' or 'list'
+    const { userEmail, logout } = useAuthStore();
+    const [viewMode, setViewMode] = useState("grid"); 
+    const [documents, setDocuments] = useState([])
+    const [displayForm, setDisplayForm] = useState(false) 
+
+    
+    
+    useEffect(() => {
+        async function fetchDocuments(){
+            try{
+                const res = await documentService.getAll()
+                if (res.status === 200){
+                    setDocuments(res.data.documents)
+                    console.log(res.data.documents)
+                }
+            }catch(error){
+                console.log(error)
+            }
+        }
+       fetchDocuments() 
+    },[])
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -47,14 +68,14 @@ export default function Dashboard() {
 
                     <div className="flex items-center gap-3">
                         <div className="text-right hidden sm:block">
-                            <p className="text-sm font-medium text-gray-900">{user?.email || "User"}</p>
+                            <p className="text-sm font-medium text-gray-900">{userEmail || "User"}</p>
                             <p className="text-xs text-gray-500">Free Plan</p>
                         </div>
                         <button
                             onClick={logout}
                             className="h-9 w-9 rounded-full bg-gradient-to-tr from-blue-100 to-indigo-100 border border-white shadow-sm flex items-center justify-center text-blue-700 font-semibold hover:ring-2 hover:ring-blue-500 transition-all"
                         >
-                            {user?.email?.[0].toUpperCase() || "U"}
+                            {userEmail[0].toUpperCase() || "U"}
                         </button>
                     </div>
                 </div>
@@ -73,6 +94,7 @@ export default function Dashboard() {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors"
+                        onClick={()=>{setDisplayForm(true)}}
                     >
                         <Plus className="h-4 w-4 mr-2" />
                         New Document
@@ -105,47 +127,14 @@ export default function Dashboard() {
 
                 {/* Documents Grid - Placeholder for now */}
                 <div className={`grid gap-6 ${viewMode === "grid" ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1"}`}>
-                    {/* Example Card 1 */}
-                    <motion.div
-                        whileHover={{ y: -2 }}
-                        className="group bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                    >
-                        <div className="h-32 bg-gray-50 rounded-lg mb-4 flex items-center justify-center border border-dashed border-gray-200 group-hover:border-blue-300 transition-colors">
-                            <FileText className="h-8 w-8 text-gray-300 group-hover:text-blue-400 transition-colors" />
-                        </div>
-                        <div>
-                            <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">Project Proposal</h3>
-                            <p className="text-xs text-gray-500 mt-1">Edited 2 hours ago</p>
-                        </div>
-                    </motion.div>
-
-                    {/* Example Card 2 */}
-                    <motion.div
-                        whileHover={{ y: -2 }}
-                        className="group bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                    >
-                        <div className="h-32 bg-gray-50 rounded-lg mb-4 flex items-center justify-center border border-dashed border-gray-200 group-hover:border-blue-300 transition-colors">
-                            <FileText className="h-8 w-8 text-gray-300 group-hover:text-blue-400 transition-colors" />
-                        </div>
-                        <div>
-                            <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">Meeting Notes</h3>
-                            <p className="text-xs text-gray-500 mt-1">Edited yesterday</p>
-                        </div>
-                    </motion.div>
-
-                    {/* Example Card 3 */}
-                    <motion.div
-                        whileHover={{ y: -2 }}
-                        className="group bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                    >
-                        <div className="h-32 bg-gray-50 rounded-lg mb-4 flex items-center justify-center border border-dashed border-gray-200 group-hover:border-blue-300 transition-colors">
-                            <FileText className="h-8 w-8 text-gray-300 group-hover:text-blue-400 transition-colors" />
-                        </div>
-                        <div>
-                            <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">Design Specs</h3>
-                            <p className="text-xs text-gray-500 mt-1">Edited 5 days ago</p>
-                        </div>
-                    </motion.div>
+                    {
+                        documents.map((document) => (
+                            <DocumentCard 
+                                key={document.document_id}
+                                document={document}
+                             />
+                        ))
+                    } 
                 </div>
             </main>
         </div>
