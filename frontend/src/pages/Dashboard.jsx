@@ -5,30 +5,50 @@ import { motion } from "framer-motion";
 import useAuthStore from "../stores/useAuthStore";
 import DocumentCard from "../components/DocumentCard";
 import documentService from "../services/documentService";
-
+import DocumentForm from "../components/DocumentForm";
+import {useQuery, useMutation, QueryClient, useQueryClient} from '@tanstack/react-query'
 export default function Dashboard() {
+    const queryClient = useQueryClient()
     const { userEmail, logout } = useAuthStore();
     const [viewMode, setViewMode] = useState("grid"); 
-    const [documents, setDocuments] = useState([])
     const [displayForm, setDisplayForm] = useState(false) 
+    const {data: documents, isLoading} = useQuery({
+        queryKey:['documents'],
+        queryFn: () => documentService.getAll().then(res => res.data.documents)
+    });
 
-    
-    
-    useEffect(() => {
-        async function fetchDocuments(){
-            try{
-                const res = await documentService.getAll()
-                if (res.status === 200){
-                    setDocuments(res.data.documents)
-                    console.log(res.data.documents)
-                }
-            }catch(error){
-                console.log(error)
-            }
+    async function createDocument(e,name){
+        try {
+           console.log(name)
+           createMutation.mutate(name)
+           
+        } catch (error) {
+           console.log(error) 
         }
-       fetchDocuments() 
-    },[])
-
+    }
+    const createMutation = useMutation({
+        mutationFn: (name) => documentService.create(name),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['documents'])
+            setDisplayForm(false)
+        }
+    })
+    
+    const deleteMutation = useMutation({
+        mutationFn: (documentId) => documentService.delete(documentId),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['documents'])
+        }
+    })
+    async function deleteDocument(documentId){
+        console.log(documentId)
+        try {
+            deleteMutation.mutate(documentId)
+        } catch (error) {
+            console.log(error) 
+        }
+    }
+    
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
             {/* Navbar */}
@@ -128,15 +148,22 @@ export default function Dashboard() {
                 {/* Documents Grid - Placeholder for now */}
                 <div className={`grid gap-6 ${viewMode === "grid" ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1"}`}>
                     {
-                        documents.map((document) => (
+                        documents?.map((document) => (
                             <DocumentCard 
                                 key={document.document_id}
                                 document={document}
+                                deleteDocument={deleteDocument}
                              />
                         ))
                     } 
                 </div>
             </main>
+            {displayForm && (
+                <DocumentForm 
+                    onClose={() => setDisplayForm(false)} 
+                    onSubmit= {createDocument}
+                />
+            )}
         </div>
     );
 }

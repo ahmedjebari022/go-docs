@@ -15,18 +15,23 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize: 1024,
 	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool{
+		return true
+	},
 }
 
 type Client struct{
+	id    uuid.UUID 
 	documentId  string
 	conn *websocket.Conn
-	sent	chan api.Document
+	sent	chan []Operation
 	hub *Hub
 }
 
 type Message struct{
-	Document 	api.Document `json:"document"`
+	UserId  	 uuid.UUID `json:"user_id"`
 	DocumentId 	 string	 `json:"document_id"`
+	Op 			 []Operation `json:"operation"`
 }
 
 type Hub struct{
@@ -63,15 +68,22 @@ func (h *Hub) Run() {
 		case msg := <- h.broadcast:
 			fmt.Printf("received brodcast :%v\n",msg)
 			for c, _ := range h.clients {
-				if c.documentId == msg.DocumentId{
-					c.sent <- msg.Document
+				if c.documentId == msg.DocumentId && c.id != msg.UserId{
+					c.sent <- msg.Op
 				}
 			}
 			}
 		}	
 }
-
-
+type Operation struct{
+	Type  string  `json:"type"`
+	Path  []int   `json:"path"`
+	Offset int  `json:"offset"`
+	Text	string `json:"text"`
+}
+type Operations struct{
+	Ops		[]Operation  `json:"operations"`
+}
 
 func (c *Client) Reader(){
 	defer func(){
@@ -87,16 +99,17 @@ func (c *Client) Reader(){
 			break
 		}
 		decoder := json.NewDecoder(reader)
-		var doc api.Document
-		if err := decoder.Decode(&doc); err != nil {
+		var op []Operation
+		if err := decoder.Decode(&op); err != nil {
 			fmt.Printf("error while deconding the json msg :%s\n", err.Error())
 			break
 		}
-		fmt.Printf("Read :%v\n",doc)
+		fmt.Printf("Read :%v\n",op)
 		
 		c.hub.broadcast <- Message{
 			DocumentId: c.documentId,
-			Document: doc,
+			Op: op,
+			UserId: c.id,
 		}
 	}
 }
@@ -106,15 +119,15 @@ func (c *Client) Writer(){
 		c.hub.unsubscribe <- c
 		c.conn.Close()
 	}()
-	for doc := range c.sent{
+	for op := range c.sent{
 		fmt.Println("client got broadcast")
 		writer, err := c.conn.NextWriter(websocket.TextMessage)
 		if err != nil {
 			c.hub.unsubscribe <- c
 		}
-		fmt.Printf("doc: %v",doc)
+		fmt.Printf("doc: %v",op)
 		encoder := json.NewEncoder(writer)
-		if err := encoder.Encode(doc); err != nil {
+		if err := encoder.Encode(op); err != nil {
 			fmt.Printf("error while encodin the doc :%s\n",err.Error())
 		}
 		if err := writer.Close(); err != nil {
@@ -124,20 +137,28 @@ func (c *Client) Writer(){
 }
 
 func (h *Hub)wsHandler(w http.ResponseWriter, r *http.Request){
-	conn, err := upgrader.Upgrade(w, r, nil)
+	userId, err := api.GetUserIdFromContext(r.Context())
 	if err != nil {
+		fmt.Println(err.Error())
+		return 
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	fmt.Println("Connecting to websocket")
+	if err != nil {
+		fmt.Println("Problem upgrading")
 		return
 	}		
 	documentIdString := r.PathValue("documentId")	
 	_, err = uuid.Parse(documentIdString)
 	if err != nil {
-		fmt.Println("error parsin the document id :%s",err.Error())
+		fmt.Printf("error parsin the document id :%s\n",err.Error())
 	}
 	c := &Client{
+		id: userId,
 		documentId: documentIdString,
 		conn: conn,
 		hub: h,
-		sent: make(chan api.Document),
+		sent: make(chan []Operation),
 	}
 	h.subscribe <- c
 	go c.Reader()

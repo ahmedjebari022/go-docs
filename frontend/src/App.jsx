@@ -4,7 +4,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard'
 import useAuthStore from './stores/useAuthStore';
 import { useEffect } from 'react';
-
+import Document from './pages/Document';
 
 function App() {
     const {initializeAuth, isLoggedIn, isLoading} = useAuthStore();
@@ -20,6 +20,7 @@ function App() {
           <Route path="/login" element={<Login />}/>
           <Route path="/register" element={<Register/>}/>
           <Route path="/dashboard" element={isLoggedIn ? <Dashboard/> : <Login/>} />
+          <Route path="/document/:documentId" element={isLoggedIn? <Document /> : <Login/>} />
         </Routes>
       </BrowserRouter>
     )

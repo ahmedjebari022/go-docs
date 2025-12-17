@@ -69,17 +69,17 @@ func main(){
 	mux.HandleFunc("POST /api/auth/login",apiCfg.LoginUser)
 	mux.HandleFunc("GET /api/cookie",apiCfg.ReaderCookieHandler)
 	mux.HandleFunc("POST /api/cookie/refresh",apiCfg.RefreshTokenHandler)
-	mux.HandleFunc("/ws/{documentId}",hub.wsHandler)
+	mux.Handle("/ws/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(hub.wsHandler)))
 	mux.Handle("GET /api/users/me",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.GetCurrentUserHandler)))
 	mux.Handle("POST /api/auth/logout",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.LogoutHandler)))
 	//document endpoints
 	mux.Handle("POST /api/documents",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.CreateDocumentHandler)))
 	mux.Handle("GET /api/documents",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.GetDocumentsByUserHandler)))
-	mux.Handle("PUT /api/documments/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.UpdateDocumentHandler)))
-	mux.Handle("DELETE /api/documments/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.DeleteDocumentHandler)))
-
-
-
+	mux.Handle("PUT /api/documents/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.UpdateDocumentHandler)))
+	mux.Handle("DELETE /api/documents/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.DeleteDocumentHandler)))
+	mux.Handle("GET /api/documents/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.GetDocumentHandler)))
+	mux.Handle("POST /api/permissions/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.AddCollaboratorToDocumentHandler)))
+	mux.Handle("DELETE /api/permissions/{documentId}",apiCfg.AuthMiddleware(http.HandlerFunc(apiCfg.DeleteUserFromCollaboration)))
   	c := cors.New(cors.Options{
         	AllowedOrigins:   []string{"http://localhost:5173", "http://127.0.0.1:5173"},
         	AllowCredentials: true,
