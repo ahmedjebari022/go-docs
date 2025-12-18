@@ -1,69 +1,94 @@
-import { LucideOctagonPause } from 'lucide-react'
-import React, { useCallback, useMemo, useState, useEffect, useRef} from 'react'
-import { createEditor} from 'slate'
-import {Slate, Editable, withReact, DefaultElement} from 'slate-react'
+import { useEffect, useMemo, useState } from 'react'
+import { createEditor, Editor, Transforms } from 'slate'
+import { Editable, Slate, withReact } from 'slate-react'
+import { withCursors, withYjs, YjsEditor } from '@slate-yjs/core'
+import { WebsocketProvider } from 'y-websocket'
+import { RemoteCursorOverlay } from './CursorOverlay'
+
+import * as Y from 'yjs'
 
 const initialValue = [
-    {
-        type: 'paragraphe',
-        children: [{text: 'A line of text in  a pragrah.'}],
-    }
+  {
+    children: [{ text: '' }],
+  },
 ]
 
-function TextEditor({documentId,handleUpdate}) {
-    const isRemote = useRef(false)
-    const socketRef = useRef(null)
-    useEffect(() => { 
-        const socket = new WebSocket(`//localhost:8081/ws/${documentId}`)
-        socket.onmessage = (event)=>{
-            console.log("received",event.data)
-            const ops = JSON.parse(event.data)
-            isRemote.current = true 
-            ops.forEach(op => {
-               editor.apply(op) 
-            })
-        }
+export const TextEditor = ({userEmail, documentId}) => {
+  const [connected, setConnected] = useState(false)
+  const [sharedType, setSharedType] = useState()
+  const [provider, setProvider] = useState()
 
-        socket.onopen = () => {
-            console.log("Connected")
-        }
-        socket.onerror = (error) => {
-            console.log(error)
-        }
-        socket.onclose = (event) => {
-            console.log(`closed by ${event}`)
-        }
-        socketRef.current = socket
-        
-        return () => {
-            socket.close()
-        }
-    },[])
-    
-    const [editor] = useState(() => withReact(createEditor()))
+  const randomColor = useMemo(() => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'), [])
 
-    function logOerations(value){
-        if(isRemote.current){
-            isRemote.current = false
-            return
-        }
-        handleUpdate(value)
-        const ops = editor.operations.filter(
-            op => op.type !== 'set_selection'
-        )
-        if (ops.length > 0){
-            socketRef.current.send(JSON.stringify(ops))
-        }
+  useEffect(() => {
+    const yDoc = new Y.Doc()
+    const sharedDoc = yDoc.get('slate', Y.XmlText)
+
+    const yProvider = new WebsocketProvider('ws://localhost:1234', documentId, yDoc)
+
+
+    yProvider.awareness.on('change', changes => {
+      console.log(Array.from(yProvider.awareness.getStates().values()))
+    })
+
+    yProvider.on('status', event => {
+      console.log(event.status) 
+      setConnected(event.status === 'connected')
+    })
+
+    setSharedType(sharedDoc)
+    setProvider(yProvider)
+
+    return () => {
+      yDoc?.destroy()
+      yProvider?.destroy()
     }
+  }, [documentId])
+
+  useEffect(() => {
+    if (provider && userEmail) {
+      provider.awareness.setLocalStateField('color', randomColor)
+      provider.awareness.setLocalStateField('name', userEmail)
+    }
+  }, [provider, userEmail, randomColor])
+
+  if (!connected || !sharedType || !provider) {
+    return <div>Loading…</div>
+  }
+
+  return <SlateEditor sharedType={sharedType} provider={provider} />
+}
+
+const SlateEditor = ({ sharedType, provider }) => {
+  const editor = useMemo(() => {
+    const e = withReact(withCursors(withYjs(createEditor(), sharedType), provider.awareness))
+
+    const { normalizeNode } = e
+    e.normalizeNode = (entry, options) => {
+      const [node] = entry
+
+      if (!Editor.isEditor(node) || node.children.length > 0) {
+        return normalizeNode(entry, options)
+      }
+
+      Transforms.insertNodes(editor, initialValue, { at: [0] })
+    }
+
+    return e
+  }, [sharedType, provider])
+
+  useEffect(() => {
+    YjsEditor.connect(editor)
+    return () => YjsEditor.disconnect(editor)
+  }, [editor])
+
   return (
-    <Slate 
-    editor={editor} 
-    initialValue={initialValue}
-    onChange={logOerations} 
-    >
+    <Slate editor={editor} initialValue={initialValue}>
+      <RemoteCursorOverlay awareness={provider.awareness}>
         <Editable />
+      </RemoteCursorOverlay>
     </Slate>
   )
 }
 
-export default TextEditor
+

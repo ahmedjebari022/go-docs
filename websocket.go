@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -10,155 +9,142 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-
-
 var upgrader = websocket.Upgrader{
-	ReadBufferSize: 1024,
+	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool{
+	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
 }
 
-type Client struct{
-	id    uuid.UUID 
-	documentId  string
-	conn *websocket.Conn
-	sent	chan []Operation
-	hub *Hub
+type Client struct {
+	id         uuid.UUID
+	documentId string
+	conn       *websocket.Conn
+	sent       chan []byte // Changed from []Operation to []byte
+	hub        *Hub
 }
 
-type Message struct{
-	UserId  	 uuid.UUID `json:"user_id"`
-	DocumentId 	 string	 `json:"document_id"`
-	Op 			 []Operation `json:"operation"`
+type Message struct {
+	UserId     uuid.UUID `json:"user_id"`
+	DocumentId string    `json:"document_id"`
+	Data       []byte    // Changed from []Operation to []byte
 }
 
-type Hub struct{
-	clients map[*Client]bool
-	subscribe chan *Client
+type Hub struct {
+	clients     map[*Client]bool
+	subscribe   chan *Client
 	unsubscribe chan *Client
-	broadcast chan Message
-
+	broadcast   chan Message
 }
-
 
 func NewHub() Hub {
 	return Hub{
-		clients: make(map[*Client]bool),
-		subscribe: make(chan *Client),
+		clients:     make(map[*Client]bool),
+		subscribe:   make(chan *Client),
 		unsubscribe: make(chan *Client),
-		broadcast: make(chan Message),
+		broadcast:   make(chan Message),
 	}
 }
-
 
 func (h *Hub) Run() {
 	for {
 		select {
-		case client := <- h.subscribe:
+		case client := <-h.subscribe:
 			fmt.Printf("subscribing client :%v\n", client)
 			h.clients[client] = true
-			fmt.Printf("clients after subscribe: %v\n", h.clients)  // Add this
-		case client := <- h.unsubscribe:
+			fmt.Printf("clients after subscribe: %v\n", h.clients) // Add this
+		case client := <-h.unsubscribe:
 			if _, ok := h.clients[client]; ok {
 				client.conn.Close()
-				delete(h.clients,client)
+				delete(h.clients, client)
 			}
-		case msg := <- h.broadcast:
-			fmt.Printf("received brodcast :%v\n",msg)
+		case msg := <-h.broadcast:
+			fmt.Printf("received brodcast :%v\n", msg)
 			for c, _ := range h.clients {
-				if c.documentId == msg.DocumentId && c.id != msg.UserId{
-					c.sent <- msg.Op
+				if c.documentId == msg.DocumentId && c.id != msg.UserId {
+					c.sent <- msg.Data
 				}
 			}
-			}
-		}	
-}
-type Operation struct{
-	Type  string  `json:"type"`
-	Path  []int   `json:"path"`
-	Offset int  `json:"offset"`
-	Text	string `json:"text"`
-}
-type Operations struct{
-	Ops		[]Operation  `json:"operations"`
-}
-
-func (c *Client) Reader(){
-	defer func(){
-		c.hub.unsubscribe <- c
-		c.conn.Close()
-	}()
-	for {
-		fmt.Println("Reader waiting for message...")
-		_, reader, err := c.conn.NextReader()
-		fmt.Println("Reader got message!")
-		if err != nil {
-			c.hub.unsubscribe <- c
-			break
-		}
-		decoder := json.NewDecoder(reader)
-		var op []Operation
-		if err := decoder.Decode(&op); err != nil {
-			fmt.Printf("error while deconding the json msg :%s\n", err.Error())
-			break
-		}
-		fmt.Printf("Read :%v\n",op)
-		
-		c.hub.broadcast <- Message{
-			DocumentId: c.documentId,
-			Op: op,
-			UserId: c.id,
 		}
 	}
 }
 
-func (c *Client) Writer(){
-	defer func(){
+type Operation struct {
+	Type   string `json:"type"`
+	Path   []int  `json:"path"`
+	Offset int    `json:"offset"`
+	Text   string `json:"text"`
+}
+type Operations struct {
+	Ops []Operation `json:"operations"`
+}
+
+func (c *Client) Reader() {
+	defer func() {
 		c.hub.unsubscribe <- c
 		c.conn.Close()
 	}()
-	for op := range c.sent{
-		fmt.Println("client got broadcast")
-		writer, err := c.conn.NextWriter(websocket.TextMessage)
+
+	for {
+		// Change from NextReader to ReadMessage for binary
+		messageType, message, err := c.conn.ReadMessage()
 		if err != nil {
 			c.hub.unsubscribe <- c
+			break
 		}
-		fmt.Printf("doc: %v",op)
-		encoder := json.NewEncoder(writer)
-		if err := encoder.Encode(op); err != nil {
-			fmt.Printf("error while encodin the doc :%s\n",err.Error())
+
+		// YJS sends binary messages
+		if messageType == websocket.BinaryMessage {
+			// Just relay the raw bytes - no JSON decoding!
+			c.hub.broadcast <- Message{
+				DocumentId: c.documentId,
+				Data:       message, // Raw []byte
+				UserId:     c.id,
+			}
 		}
-		if err := writer.Close(); err != nil {
+	}
+}
+
+func (c *Client) Writer() {
+	defer func() {
+		c.hub.unsubscribe <- c
+		c.conn.Close()
+	}()
+
+	for data := range c.sent {
+		// Send as binary
+		err := c.conn.WriteMessage(websocket.BinaryMessage, data)
+		if err != nil {
+			c.hub.unsubscribe <- c
 			return
 		}
 	}
 }
 
-func (h *Hub)wsHandler(w http.ResponseWriter, r *http.Request){
+func (h *Hub) wsHandler(w http.ResponseWriter, r *http.Request) {
 	userId, err := api.GetUserIdFromContext(r.Context())
 	if err != nil {
 		fmt.Println(err.Error())
-		return 
+		return
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	fmt.Println("Connecting to websocket")
 	if err != nil {
 		fmt.Println("Problem upgrading")
 		return
-	}		
-	documentIdString := r.PathValue("documentId")	
+	}
+	documentIdString := r.PathValue("documentId")
 	_, err = uuid.Parse(documentIdString)
 	if err != nil {
-		fmt.Printf("error parsin the document id :%s\n",err.Error())
+		fmt.Printf("error parsin the document id :%s\n", err.Error())
 	}
 	c := &Client{
-		id: userId,
+		id:         userId,
 		documentId: documentIdString,
-		conn: conn,
-		hub: h,
-		sent: make(chan []Operation),
+		conn:       conn,
+		hub:        h,
+		sent:       make(chan []byte),
 	}
 	h.subscribe <- c
 	go c.Reader()

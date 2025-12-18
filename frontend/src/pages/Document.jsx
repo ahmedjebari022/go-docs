@@ -6,7 +6,7 @@ import { ChevronDown, Plus, User, Bold, Italic, Underline, Type, Palette } from 
 import useAuthStore from '../stores/useAuthStore'
 import ShareModal from '../components/ShareModal'
 import permissionService from '../services/permissionService'
-import TextEditor from '../components/TextEditor'
+import {TextEditor} from '../components/TextEditor'
 
 function Document() {
   const { documentId } = useParams()
@@ -125,6 +125,7 @@ function Document() {
       <main className="pt-20 px-4">
         <div className="max-w-4xl mx-auto bg-white shadow-sm min-h-screen p-12">
             <TextEditor
+              userEmail={userEmail}
               documentId={documentId}
               handleUpdate={handleChangeDocument}              
 
