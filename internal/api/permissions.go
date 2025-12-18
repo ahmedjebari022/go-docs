@@ -86,6 +86,7 @@ func (cfg *ApiConfig) AddCollaboratorToDocumentHandler(w http.ResponseWriter, r 
 		return
 	}
 	defer r.Body.Close()
+	fmt.Printf("req:%v\n",params)
 	if params.Role != EditorRole && params.Role != ViewerRole {
 		RespondWithError(w, 400, "wrong role value")
 		return

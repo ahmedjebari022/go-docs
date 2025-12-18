@@ -130,12 +130,13 @@ func (cfg *ApiConfig) LoginUser(w http.ResponseWriter, r *http.Request) {
 
 	accesCookie := http.Cookie{
 		Name:     accessCookieName,
-		Path:     "/api",
+		Path:     "/",
+		Domain:   "",
 		Value:    jwt,
 		Expires:  time.Now().Add(15 * time.Minute),
 		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
 	}
 	refreshToken, err := auth.GenerateRefreshToken()
 
@@ -156,12 +157,13 @@ func (cfg *ApiConfig) LoginUser(w http.ResponseWriter, r *http.Request) {
 
 	refreshCookie := http.Cookie{
 		Name:     refreshCookieName,
-		Path:     "/api",
+		Path:     "/",
+		Domain:   "",
 		Value:    rt.Token,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteNoneMode,
 		Expires:  rt.ExpiresAt,
-		Secure:   false,
+		Secure:   true,
 	}
 
 	err = WriteSigned(w, refreshCookie, cfg.CookieKey)
@@ -204,7 +206,7 @@ func (cfg *ApiConfig) RefreshTokenHandler(w http.ResponseWriter, r *http.Request
 		Name:     accessCookieName,
 		Value:    jwt,
 		Expires:  time.Now().Add(time.Minute * 15),
-		Path:     "/api",
+		Path:     "/",
 		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
 		HttpOnly: true,
@@ -243,4 +245,69 @@ func (cfg *ApiConfig) ReaderCookieHandler(w http.ResponseWriter, r *http.Request
 	RespondWithJson(w, 200, responseSturct{
 		Value: value,
 	})
+}
+
+
+func (cfg *ApiConfig) GetCurrentUserHandler(w http.ResponseWriter, r *http.Request){
+	userId, err := GetUserIdFromContext(r.Context())
+	if err != nil {
+		RespondWithError(w, 403, err.Error())
+		return
+	}
+	user, err := cfg.Db.GetUserById(r.Context(), userId)
+	if err != nil {
+		RespondWithError(w, 400, err.Error())
+	}
+	type resBody struct{
+		Email string `json:"email"`
+	}
+	res := resBody{
+		Email: user.Email,
+	}
+	RespondWithJson(w, 200, res)
+}
+
+
+func (cfg *ApiConfig) LogoutHandler(w http.ResponseWriter, r *http.Request){
+	token, err := ReadSigned(r, refreshCookieName, cfg.CookieKey)
+	if err != nil {
+		RespondWithError(w, 403, err.Error())
+		return 
+	}
+	accesCookie := http.Cookie{
+		Name:     accessCookieName,
+		Value:    "",
+		Expires:  time.Now().Add(-1 * time.Hour),
+		MaxAge:   -1,
+		Path:     "/",
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+		HttpOnly: true,
+	}
+	err = cfg.Db.RevokeToken(r.Context(), token)
+	if err != nil {
+		RespondWithError(w, 500, err.Error())
+		return
+	}
+	refreshCookie := http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Expires:  time.Now().Add(-1 * time.Hour),
+		MaxAge:   -1,
+		Path:     "/",
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+		HttpOnly: true,
+	}
+	err = WriteSigned(w, accesCookie, cfg.CookieKey)
+	if err != nil {
+		RespondWithError(w, 500, err.Error())
+		return
+	}
+	err = WriteSigned(w, refreshCookie, cfg.CookieKey)
+	if err != nil {
+		RespondWithError(w, 500, err.Error())
+		return
+	}
+	RespondWithJson(w, 204, struct{}{})
 }

@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -17,13 +17,13 @@ type Document struct {
 	Blocs []Bloc `json:"blocs"`
 }
 type Bloc struct {
-	Text  string  `json:"text"`
-	Style Styling `json:"style"`
+	Type  string  `json:"type"`
+	Children []Child `json:"children"`
 }
-type Styling struct {
-	Font   string `json:"font"`
-	Weight string `json:"weight"`
-	Color  string `json:"color"`
+type Child struct {
+	Text  string  `json:"text"`
+	Bold  bool     `json:"bold,omitempty"`
+	Italic bool 	`json:"italic,omitempty"`
 }
 
 func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Request) {
@@ -37,8 +37,8 @@ func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Reque
 		Name string `json:"name" validate:"required"`
 	}
 	type responseBody struct {
-		Id      uuid.UUID `json:"id"`
-		Name    string    `json:"name"`
+		Id      uuid.UUID `json:"document_id"`
+		Name    string    `json:"document_name"`
 		OwnerId string    `json:"owner_id"`
 	}
 
@@ -51,6 +51,7 @@ func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Reque
 	var params requestBody
 	err = json.Unmarshal(data, &params)
 	if err != nil {
+		fmt.Printf("error while unmarhsalling %s \n",err.Error())
 		RespondWithError(w, 500, err.Error())
 		return
 	}
@@ -64,18 +65,21 @@ func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Reque
 	documentID := uuid.New()
 	err = EnsureDirExists(cfg.AssetsPath)
 	if err != nil {
+		fmt.Println("error while error while ensure dir exists")
 		RespondWithError(w, 500, err.Error())
 		return
 	}
 	documentPath := generatePathFromId(documentID.String(), cfg.AssetsPath)
 	file, err := os.Create(documentPath)
 	if err != nil {
+		fmt.Println("error while creating folder")
 		RespondWithError(w, 500, err.Error())
 		return
 	}
 	defer file.Close()
-	err = WriteToFile(file, Document{})
+	err = WriteToFile(file, []Bloc{})
 	if err != nil {
+		fmt.Println("error while writing to file")
 		RespondWithError(w, 500, err.Error())
 		return
 	}
@@ -94,7 +98,6 @@ func (cfg *ApiConfig) CreateDocumentHandler(w http.ResponseWriter, r *http.Reque
 		Name:    document.Name,
 		OwnerId: document.OwnerID.String(),
 	})
-
 }
 
 func (cfg *ApiConfig) GetDocumentsByUserHandler(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +133,16 @@ func (cfg *ApiConfig) GetDocumentsByUserHandler(w http.ResponseWriter, r *http.R
 }
 
 func (cfg *ApiConfig) GetDocumentHandler(w http.ResponseWriter, r *http.Request) {
+	
+	type documentMetadata struct {
+		DocumentId   uuid.UUID `json:"document_id"`
+		DocumentName string    `json:"document_name"`
+	}
+	type resBody struct {
+		MetaData  	documentMetadata `json:"meta_data"`
+		DocumentContent []Bloc `json:"document_content"`
+	}
+
 	documentId := r.PathValue("documentId")
 	userId, err := GetUserIdFromContext(r.Context())
 	if err != nil {
@@ -146,14 +159,13 @@ func (cfg *ApiConfig) GetDocumentHandler(w http.ResponseWriter, r *http.Request)
 		RespondWithError(w, 400, err.Error())
 		return
 	}
-
-	documentOwner, err := cfg.Db.GetDocumentOwnerId(r.Context(), id)
+	documentMetaData, err := cfg.Db.GetDocument(r.Context(), id)
 	if err != nil {
 		RespondWithError(w, 500, err.Error())
 		return
 	}
 
-	if documentOwner != userId {
+	if documentMetaData.OwnerID != userId {
 		_, err = cfg.Db.GetUserPermission(r.Context(), database.GetUserPermissionParams{
 			UserID:     userId,
 			DocumentID: id,
@@ -170,7 +182,13 @@ func (cfg *ApiConfig) GetDocumentHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	RespondWithJson(w, 200, documentContent)
+	RespondWithJson(w, 200, resBody{
+		MetaData: documentMetadata{
+			DocumentId: documentMetaData.ID,
+			DocumentName: documentMetaData.Name,
+		},
+		DocumentContent: documentContent,
+	})
 }
 
 func (cfg *ApiConfig) UpdateDocumentHandler(w http.ResponseWriter, r *http.Request) {
@@ -209,12 +227,12 @@ func (cfg *ApiConfig) UpdateDocumentHandler(w http.ResponseWriter, r *http.Reque
 	r.Body = http.MaxBytesReader(w, r.Body, int64(sizeLimit))
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
-	var params Document
+	var params []Bloc
 	if err := decoder.Decode(&params); err != nil {
-		RespondWithError(w, 400, err.Error())
+		RespondWithError(w, 400, fmt.Sprintf("ici %s",err.Error()))
 		return
 	}
-	if len(params.Blocs) > 50000 {
+	if len(params) > 50000 {
 		RespondWithError(w, 413, "document too large")
 		return
 	}
@@ -265,6 +283,7 @@ func (cfg *ApiConfig) DeleteDocumentHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	documentIdString := r.PathValue("documentId")
+	fmt.Printf("documentId: %s\n",documentIdString)
 	documentId, err := uuid.Parse(documentIdString)
 	if err != nil {
 		RespondWithError(w, 400, err.Error())
@@ -323,7 +342,7 @@ func EnsureDirExists(pathdir string) error {
 	return nil
 }
 
-func WriteToFile(file *os.File, documentContent Document) error {
+func WriteToFile(file *os.File, documentContent []Bloc) error {
 	encoder := json.NewEncoder(file)
 	if err := encoder.Encode(documentContent); err != nil {
 		return err
@@ -331,16 +350,16 @@ func WriteToFile(file *os.File, documentContent Document) error {
 	return nil
 }
 
-func ReadFromFile(filepath string) (Document, error) {
+func ReadFromFile(filepath string) ([]Bloc, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
-		return Document{}, err
+		return nil, err
 	}
 	defer file.Close()
 	decoder := json.NewDecoder(file)
-	var document Document
+	var document []Bloc
 	if err := decoder.Decode(&document); err != nil {
-		return Document{}, err
+		return nil, err
 	}
 	return document, nil
 }
