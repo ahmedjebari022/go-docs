@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useQueryClient, useQuery, useMutation, } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import documentService from '../services/documentService'
@@ -7,11 +7,12 @@ import useAuthStore from '../stores/useAuthStore'
 import ShareModal from '../components/ShareModal'
 import permissionService from '../services/permissionService'
 import {TextEditor} from '../components/TextEditor'
+import { Editor } from 'slate'
 
 function Document() {
   const { documentId } = useParams()
   const queryClient = useQueryClient() 
-  const [documentContent, setDocumentContent] = useState({})
+  const documentContent = useRef({})
   const {userEmail, logout} = useAuthStore()
   const [showModal, setShowModal] = useState(false)
   const { data: document, isLoading, isError }= useQuery({
@@ -31,9 +32,12 @@ function Document() {
   }
   async function handleSaveDocument(){
     try {
-      console.log(documentContent)
-      const res = await documentService.update(documentId,JSON.stringify(documentContent))
-      console.log(res)
+      if (documentContent.current){
+        const content = documentContent.current.save()
+        console.log(content)
+        const res = await documentService.update(documentId,JSON.stringify(content))
+        console.log(res)
+      }
     } catch (error) {
       console.log(error) 
     }
@@ -125,9 +129,11 @@ function Document() {
       <main className="pt-20 px-4">
         <div className="max-w-4xl mx-auto bg-white shadow-sm min-h-screen p-12">
             <TextEditor
+              ref={documentContent}
               userEmail={userEmail}
               documentId={documentId}
               handleUpdate={handleChangeDocument}              
+              initialContent={document.document_content}
 
               />
         </div>
